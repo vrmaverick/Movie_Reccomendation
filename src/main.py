@@ -8,6 +8,7 @@ Routes:
 """
 
 import asyncio
+import json
 import pathlib
 
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ from src.hybrid_retriever import retrieve as hybrid_retrieve
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 INDEX_HTML = STATIC_DIR / "index.html"
+BENCHMARK_JSON = ROOT / "data" / "processed" / "benchmark_results.json"
 
 app = FastAPI(title="Movie Recommender", version="1.0.0")
 
@@ -53,6 +55,21 @@ async def serve_index():
     if not INDEX_HTML.exists():
         raise HTTPException(status_code=404, detail="index.html not found")
     return FileResponse(INDEX_HTML, media_type="text/html")
+
+
+@app.get("/benchmark")
+async def get_benchmark():
+    """
+    Return pre-computed benchmark results from data/processed/benchmark_results.json.
+
+    Raises:
+        404: If the benchmark file has not been generated yet.
+    """
+    if not BENCHMARK_JSON.exists():
+        raise HTTPException(status_code=404, detail="Benchmark results not found. Run benchmark.py first.")
+    with open(BENCHMARK_JSON, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    return JSONResponse(content=data)
 
 
 @app.post("/recommend", response_model=RecommendResponse)

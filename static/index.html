@@ -207,6 +207,169 @@
       font-size: 0.9rem;
       padding: 2rem 0;
     }
+
+    /* ── Benchmark panel ── */
+    #benchmark {
+      max-width: 900px;
+      margin: 0 auto 2.5rem;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .bench-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.2rem;
+      background: #131925;
+      border-bottom: 1px solid #1e293b;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .bench-header h2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: #94a3b8;
+    }
+
+    .bench-meta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .bench-meta span {
+      font-size: 0.75rem;
+      color: #475569;
+    }
+
+    .bench-toggle {
+      font-size: 0.75rem;
+      color: #475569;
+      transition: transform 0.2s;
+    }
+
+    .bench-toggle.open { transform: rotate(180deg); }
+
+    .bench-body {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: #1e293b;
+    }
+
+    @media (max-width: 680px) {
+      .bench-body { grid-template-columns: 1fr 1fr; }
+    }
+
+    .bench-stat {
+      background: #0f1117;
+      padding: 1rem 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .bench-stat-label {
+      font-size: 0.72rem;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    .bench-stat-values {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .bench-val {
+      font-size: 0.88rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .bench-val .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-content { background: #818cf8; }
+    .dot-hybrid  { background: #34d399; }
+
+    .bench-sub {
+      font-size: 0.75rem;
+      color: #475569;
+      margin-top: 0.2rem;
+    }
+
+    .bench-winner {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: #022c22;
+      color: #34d399;
+      border: 1px solid #065f46;
+    }
+
+    .bench-winner.content {
+      background: #1e1b4b;
+      color: #818cf8;
+      border-color: #3730a3;
+    }
+
+    .bench-queries {
+      display: none;
+      padding: 0.5rem 1.2rem 1rem;
+      background: #0f1117;
+    }
+
+    .bench-queries.visible { display: block; }
+
+    .bench-q-title {
+      font-size: 0.75rem;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.5rem;
+    }
+
+    .bench-q-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+
+    .bench-q-table th {
+      text-align: left;
+      color: #475569;
+      font-weight: 500;
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .bench-q-table td {
+      padding: 0.35rem 0.5rem;
+      border-bottom: 1px solid #0f172a;
+      color: #94a3b8;
+      vertical-align: top;
+    }
+
+    .bench-q-table tr:last-child td { border-bottom: none; }
+
+    .td-cb { color: #818cf8; }
+    .td-hy { color: #34d399; }
   </style>
 </head>
 <body>
@@ -215,6 +378,34 @@
     <h1>Movie Recommender</h1>
     <p>Compare keyword-based vs. hybrid AI search side by side</p>
   </header>
+
+  <!-- Benchmark panel (populated by JS on load) -->
+  <div id="benchmark" style="display:none">
+    <div class="bench-header" id="benchHeader">
+      <h2>Benchmark Results</h2>
+      <div class="bench-meta">
+        <span id="benchMeta"></span>
+        <span class="bench-toggle" id="benchToggle">&#9660;</span>
+      </div>
+    </div>
+    <div class="bench-body" id="benchBody"></div>
+    <div class="bench-queries" id="benchQueries">
+      <p class="bench-q-title">Per-query breakdown</p>
+      <table class="bench-q-table">
+        <thead>
+          <tr>
+            <th>Query</th>
+            <th>CB latency</th>
+            <th>Hy latency</th>
+            <th>CB quality</th>
+            <th>Hy quality</th>
+            <th>Overlap</th>
+          </tr>
+        </thead>
+        <tbody id="benchQBody"></tbody>
+      </table>
+    </div>
+  </div>
 
   <div class="search-wrap">
     <input
@@ -358,6 +549,116 @@
     queryInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') search();
     });
+
+    /* ── Benchmark panel ── */
+    const benchPanel   = document.getElementById('benchmark');
+    const benchHeader  = document.getElementById('benchHeader');
+    const benchBody    = document.getElementById('benchBody');
+    const benchMeta    = document.getElementById('benchMeta');
+    const benchToggle  = document.getElementById('benchToggle');
+    const benchQueries = document.getElementById('benchQueries');
+    const benchQBody   = document.getElementById('benchQBody');
+    let benchOpen = false;
+
+    function stat(label, rows, sub) {
+      const el = document.createElement('div');
+      el.className = 'bench-stat';
+      el.innerHTML = `
+        <div class="bench-stat-label">${label}</div>
+        <div class="bench-stat-values">${rows}</div>
+        ${sub ? `<div class="bench-sub">${sub}</div>` : ''}
+      `;
+      return el;
+    }
+
+    function val(dot, text, winner) {
+      return `<div class="bench-val">
+        <span class="dot ${dot}"></span>
+        <span>${text}</span>
+        ${winner ? `<span class="bench-winner ${winner}">${winner === 'hybrid' ? 'hybrid wins' : 'CB wins'}</span>` : ''}
+      </div>`;
+    }
+
+    async function loadBenchmark() {
+      try {
+        const res = await fetch('/benchmark');
+        if (!res.ok) return;
+        const d = await res.json();
+        const agg = d.aggregate;
+        const ts = new Date(d.benchmark_timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        benchMeta.textContent = `${d.num_queries} queries · ${ts}`;
+
+        const cbLatency = agg.avg_latency_ms.content_based.toFixed(1);
+        const hyLatency = agg.avg_latency_ms.hybrid.toFixed(1);
+        const speedup   = agg.avg_latency_ms.speedup_ratio.toFixed(1);
+
+        const cbQuality = agg.avg_llm_quality.content_based.toFixed(2);
+        const hyQuality = agg.avg_llm_quality.hybrid.toFixed(2);
+
+        const cbGenreDiv = agg.avg_diversity.content_based.genre_diversity.toFixed(1);
+        const hyGenreDiv = agg.avg_diversity.hybrid.genre_diversity.toFixed(1);
+
+        const jaccard = (agg.avg_result_overlap.jaccard_similarity * 100).toFixed(1);
+        const overlap = agg.avg_result_overlap.intersection_count.toFixed(1);
+
+        benchBody.appendChild(stat(
+          'Avg Latency',
+          val('dot-content', `${cbLatency} ms`) +
+          val('dot-hybrid',  `${hyLatency} ms`, 'content'),
+          `Content-based is ${speedup}× faster`
+        ));
+
+        benchBody.appendChild(stat(
+          'AI Quality Score <small style="font-weight:400">(/ 5)</small>',
+          val('dot-content', cbQuality) +
+          val('dot-hybrid',  hyQuality, hyQuality > cbQuality ? 'hybrid' : ''),
+          `${agg.avg_llm_quality.queries_judged} queries judged`
+        ));
+
+        benchBody.appendChild(stat(
+          'Genre Diversity',
+          val('dot-content', cbGenreDiv + ' genres') +
+          val('dot-hybrid',  hyGenreDiv + ' genres', hyGenreDiv > cbGenreDiv ? 'hybrid' : ''),
+          'avg unique genres per query'
+        ));
+
+        benchBody.appendChild(stat(
+          'Result Overlap',
+          `<div class="bench-val" style="font-size:1.1rem;font-weight:700;color:#f1f5f9">${jaccard}%</div>`,
+          `Jaccard similarity · ${overlap} shared titles avg`
+        ));
+
+        // Per-query rows
+        d.queries.forEach(q => {
+          const tr = document.createElement('tr');
+          const cbL = q.metrics.latency_ms.content_based.toFixed(0);
+          const hyL = q.metrics.latency_ms.hybrid.toFixed(0);
+          const cbQ = q.metrics.llm_quality.content_based.avg_score.toFixed(1);
+          const hyQ = q.metrics.llm_quality.hybrid.avg_score.toFixed(1);
+          const jac = (q.metrics.result_overlap.jaccard_similarity * 100).toFixed(0);
+          tr.innerHTML = `
+            <td style="max-width:220px;color:#cbd5e1">${q.query}</td>
+            <td class="td-cb">${cbL} ms</td>
+            <td class="td-hy">${hyL} ms</td>
+            <td class="td-cb">${cbQ}/5</td>
+            <td class="td-hy">${hyQ}/5</td>
+            <td style="color:#64748b">${jac}%</td>
+          `;
+          benchQBody.appendChild(tr);
+        });
+
+        benchPanel.style.display = 'block';
+
+        benchHeader.addEventListener('click', () => {
+          benchOpen = !benchOpen;
+          benchQueries.classList.toggle('visible', benchOpen);
+          benchToggle.classList.toggle('open', benchOpen);
+        });
+
+      } catch (_) { /* silently skip if endpoint unavailable */ }
+    }
+
+    loadBenchmark();
   </script>
 
 </body>
