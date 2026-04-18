@@ -1,0 +1,8 @@
+.env
+data/processed/
+__pycache__/
+*.pyc
+.venv/
+.claude/
+.claude
+log.txt
