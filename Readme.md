@@ -145,8 +145,7 @@ Movie_Recommendation/
 ---
 
 ## 🎥 Demo
-
-> 📸 _Screenshot / video placeholder — add a demo GIF or screenshot here_
+![alt text](https://github.com/vrmaverick/Movie_Reccomendation/blob/main/data/demo.png) "Demo")
 
 ---
 
