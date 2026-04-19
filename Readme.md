@@ -1,5 +1,180 @@
-# Code Review to Personally Track what's Done
+# 🎬 Movie Recommender
 
+A natural language movie recommendation engine with two retrieval approaches — a lightweight BM25 keyword search and a full hybrid pipeline combining semantic vector search with LLM-powered intent understanding.
+
+---
+
+## 🚀 Quick Start
+
+### Using Docker
+```bash
+docker build -t movie-recommender .
+docker run -p 8080:80 movie-recommender
+```
+Then just open your browser and go to: http://localhost or http://localhost:80
+If you want to see the API docs, try: http://localhost/docs
+
+
+### Local Development
+```bash
+uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
+```
+Or just run:
+```bash
+run.bat
+```
+
+
+## 🤖 AI Setup
+
+| Component | Provider | Model |
+|-----------|----------|-------|
+| Intent Classification | Groq | `qwen/qwen3-32b` |
+| Semantic Embeddings | Hugging Face | `sentence-transformers/all-MiniLM-L6-v2` |
+
+Before running, set your Groq API key:
+```bash
+export GROQ_API_KEY=your_api_key_here
+```
+Get a free key at [console.groq.com](https://console.groq.com).
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TD
+    A[User Query] --> B{Approach}
+    B --> C[Content-Based BM25]
+    B --> D[Hybrid Pipeline]
+
+    C --> E[Tokenize Query]
+    E --> F[BM25 Keyword Scoring]
+    F --> K[Top-K Results]
+
+    D --> G[Intent Classification\nGroq · qwen3-32b]
+    D --> H[BM25 Retrieval\nkeywords from intent]
+    D --> I[FAISS Semantic Search\nMiniLM-L6-v2 embeddings]
+    G --> H
+    H --> J[Reciprocal Rank Fusion]
+    I --> J
+    J --> L[Reasoning Generation\ncosine + theme + mood]
+    L --> M[Top-K Results with Explanation]
+
+    N[netflix_data.csv] --> O[ingest.py]
+    O --> P[BM25 Index · bm25.pkl]
+    O --> Q[FAISS Index · faiss.index]
+    O --> R[Movies Store · movies.pkl]
+    P --> F
+    P --> H
+    Q --> I
+    R --> K
+    R --> M
+```
+
+
+---
+
+## 🔀 Two Approaches
+
+### 1. Content-Based (BM25)
+Pure keyword retrieval using [BM25](https://en.wikipedia.org/wiki/Okapi_BM25). Fast and interpretable.
+
+- Tokenizes query (lowercase, punctuation removal)
+- Scores all documents by keyword overlap
+- Returns ranked top-K results
+
+**Avg latency: ~56ms**
+
+### 2. Hybrid (BM25 + FAISS + LLM Intent)
+A full semantic pipeline that understands the *meaning* of your query, not just the words.
+
+- **Step 0** — Groq extracts structured intent: mood, genre, themes, keywords
+- **Step 1** — BM25 retrieval using extracted keywords
+- **Step 2** — FAISS semantic search using MiniLM embeddings (cosine similarity via `IndexFlatIP`)
+- **Step 3** — [Reciprocal Rank Fusion (RRF)](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) fuses both ranked lists without score-scale bias
+- **Step 4** — Reasoning generated from cosine similarity + theme/mood match
+
+**Avg latency: ~1363ms** | **24x slower, but higher quality**
+
+---
+
+## 📊 Benchmark Results
+
+Evaluated across 10 diverse natural language queries.
+
+| Metric | Content-Based | Hybrid |
+|--------|--------------|--------|
+| Avg Latency | 55.8 ms | 1363.2 ms |
+| Avg LLM Quality Score (1–5) | 2.36 | **2.80** |
+| Avg Genre Diversity | 5.6 | **7.0** |
+| Avg Jaccard Similarity (overlap between approaches) | — | 0.17 |
+| Avg Shared Titles | — | 1.4 / 5 |
+
+> Quality scores judged by an LLM evaluator on relevance (1–5 scale). Low overlap (0.17 Jaccard) confirms the two approaches surface meaningfully different results.
+
+---
+
+## 🗂️ Project Structure
+
+```
+Movie_Recommendation/
+├── src/
+│   ├── main.py                 # FastAPI app entry point
+│   ├── ingest.py               # CSV → BM25 + FAISS index builder
+│   ├── content_retriever.py    # BM25-only retrieval
+│   ├── hybrid_retriever.py     # BM25 + FAISS + RRF pipeline
+│   └── recommender.py          # Intent classification + final output parsing
+│   └── test.py                 # Benchmarking
+├── static/
+│   └── index.html              # Frontend UI
+├── data/
+│   └── processed/              # Generated indexes (auto-created by ingest.py)
+│       ├── bm25.pkl
+│       ├── faiss.index
+│       ├── movies.pkl
+│       └── benchmark_results.json
+├── Dockerfile
+├── requirements.txt
+└── run.bat                       # One-click local dev launcher
+└── Claude.md                     # Helper md
+└── Benchmarked_results.txt       # Detailed Results
+└── .env                          ##################    ADD  {GROQ_API_KEY = gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx}
+```
+
+---
+
+## 🎥 Demo
+
+> 📸 _Screenshot / video placeholder — add a demo GIF or screenshot here_
+
+---
+
+# Code Review to Track what's done in each file
+### Indexing (`ingest.py`)
+
+Run once to build the search indexes from `netflix_data.csv`:
+- Fits BM25 on concatenated movie metadata
+- Encodes all movies with MiniLM → normalizes → stores in FAISS `IndexFlatIP`
+- Saves a lightweight movie dictionary (title, genre, description, etc.) for fast lookup at query time
+```
+src > ingest.py — Load netflix_data.csv once, build FAISS + BM25 indexes, save artifacts to data/processed/ for use by the retrievers.
+
+Load dataset 
+Fit BM25API on concatinated information
+Build FAISS index ---- Embedding - > Fit into normalized + flattend indexes
+
+
+Build movies : 
+
+This function is the "Data Trimmer." Its job is to take a massive, heavy DataFrame (which might have dozens of columns you don't need) and turn it into a lightweight list of Python dictionaries that are easy to access during a search.
+
+Think of it as packing a "go-bag" for your application—you're only taking the essentials so the search engine can run faster.
+
+```
+
+### Content based (`content_retriever.py `): 
+  1) Uses Matched tokens to Rank moview=s from historical Dataset using BM25
 ```
 src > content_retriever.py — Pure BM25 keyword-based retrieval.
     
@@ -23,6 +198,9 @@ src > content_retriever.py — Pure BM25 keyword-based retrieval.
 
 ```
 
+### Hybrid BM25 + semantic + intent (`hybrid_retriever.py`): 
+  1) Uses Bm25, LLM based intent recognition and cosine similarity with FAISS based on Netflix dataset.
+
 ```
 src > hybrid_retriever.py — BM25 + FAISS semantic search fused via Reciprocal Rank Fusion.
 
@@ -44,9 +222,6 @@ step 1 : -    Run BM25 with *keywords* and return the top-n document indexes ord
 step 2 : -    Faiss : indexing as explained below in appendix
 step 3 : -    Reciprocal Rank Fusion (RRF) is a clever "democracy" algorithm for search results. It’s used to combine rankings from different sources (like a keyword search and a vector search) into a single, unified list without needing to worry about the actual scores (like "0.85 cosine similarity" vs "12.5 BM25 score").
 
-
-
-
     retrieve: 
     first preprocess query
     get indexes intialized
@@ -61,23 +236,8 @@ step 3 : -    Reciprocal Rank Fusion (RRF) is a clever "democracy" algorithm for
     returned combined results
 
 ```
-
-```
-src > ingest.py — Load netflix_data.csv once, build FAISS + BM25 indexes, save artifacts to data/processed/ for use by the retrievers.
-
-Load dataset 
-Fit BM25API on concatinated information
-Build FAISS index ---- Embedding - > Fit into normalized + flattend indexes
-
-
-Build movies : 
-
-This function is the "Data Trimmer." Its job is to take a massive, heavy DataFrame (which might have dozens of columns you don't need) and turn it into a lightweight list of Python dictionaries that are easy to access during a search.
-
-Think of it as packing a "go-bag" for your application—you're only taking the essentials so the search engine can run faster.
-
-```
-
+### intent classifcation (`Reccomend.py`): 
+  1) Intent Classification using Groq and Postprocessing.
 ```
 src > Reccomend.py
 
@@ -96,70 +256,22 @@ src > Reccomend.py
 
 ```
 
+### Benchmarking (`test.py`): 
+  1) 10 syntheic queries used for judging the diffrence between two appproaches.
+  2) LLm as a judge used for comparing quality of reccomednations of both approaches.
 
-# Benchmarking : Results : 
-Starting benchmark — 10 queries
+```
+Runs 10 synthetic queries through both retrievers and writes results to data/processed/benchmark_results.json.
+4 metrics measured per query:
 
-[1/10]   Running: 'dark psychological thriller with mind-bending plot twists'
-Works _load_indexes
-works _get_indexes
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████| 103/103 [00:00<00:00, 6552.41it/s]
-BertModel LOAD REPORT from: sentence-transformers/all-MiniLM-L6-v2
-Key                     | Status     |  |
-------------------------+------------+--+-
-embeddings.position_ids | UNEXPECTED |  |
+Score Transparency — raw BM25 scores (content-based) and cosine + RRF scores (hybrid)
+Result Overlap — Jaccard similarity and shared titles between both methods
+Diversity — unique genres, content types, and release year spread within each result set
+Latency — milliseconds per method
 
-Notes:
-- UNEXPECTED:   can be ignored when loading from different task/architecture; not ok if you expect identical arch.
-LLM raw output: '[5, 2, 3, 4, 1]'
-LLM raw output: '[1, 1, 1, 5, 1]'
-[2/10]   Running: 'heartwarming family animation about friendship and courage'
-LLM raw output: '[2, 5, 1, 2, 1]'
-LLM raw output: '[5, 5, 5, 1, 1]'
-[3/10]   Running: 'true crime documentary about a notorious murder investigation'
-LLM raw output: '[5, 5, 5, 4, 5]'
-LLM raw output: '[5, 5, 5, 5, 1]'
-[4/10]   Running: 'romantic comedy set in New York with witty dialogue'
-LLM raw output: '[1, 1, 1, 1, 1]'
-LLM raw output: '[2, 1, 1, 1, 1]'
-[5/10]   Running: 'gritty action film about organised crime and street gangs'
-LLM raw output: '[5, 1, 5, 1, 1]'
-LLM raw output: '[2, 4, 5, 2, 1]'
-[6/10]   Running: 'Spanish language drama about immigration and cultural identity'
-LLM raw output: '[1, 1, 1, 1, 1]'
-LLM raw output: '[1, 1, 1, 2, 1]'
-[7/10]   Running: 'stand-up comedy special with sharp social and political commentary'
-LLM raw output: '[5, 5, 5, 5, 5]'
-LLM raw output: '[5, 5, 2, 5, 5]'
-[8/10]   Running: 'nature documentary exploring deep ocean and marine life'
-LLM raw output: '[5, 1, 1, 5, 1]'
-LLM raw output: '[5, 5, 1, 5, 5]'
-[9/10]   Running: 'coming-of-age story about teenagers navigating grief and loss'
-LLM raw output: '[1, 1, 1, 1, 1]'
-LLM raw output: '[5, 1, 1, 1, 1]'
-[10/10]   Running: 'sci-fi series with complex world-building and moral philosophy'
-LLM raw output: '[1, 1, 1, 1, 1]'
-LLM raw output: '[1, 4, 1, 1, 5]'
+LLM-as-Judge — each result set is also rated 1–5 for relevance by llama-3.1-8b-instant via Groq, running concurrently for both methods per query.
 
-Benchmark complete. Results written to:
-  E:\Movie_Reccomendation\data\processed\benchmark_results.json
-
-── Aggregate Summary ──────────────────────────────────────
-  Avg latency  content-based : 55.838 ms
-  Avg latency  hybrid        : 1363.221 ms
-  Hybrid is 24.41x slower than content-based
-  Avg Jaccard similarity      : 0.1734
-  Avg overlap (shared titles) : 1.4
-  Avg genre diversity  CB / H : 5.6 / 7.0
-  Avg cosine score (hybrid)   : 0.4805
-  Avg BM25 score  (content)   : 14.5347
-
-── LLM Quality Scores (1–5, higher = more relevant) ───────
-  Avg quality  content-based : 2.36
-  Avg quality  hybrid        : 2.8
-  Queries judged             : 10
-
+```
 # Appendix
 
 # FAISS
